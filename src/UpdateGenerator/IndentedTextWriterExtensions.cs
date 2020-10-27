@@ -16,14 +16,24 @@ namespace UpdateGenerator
             @this.WriteLine("}");
         }
 
-        public static void StartMultiLineComment(this IndentedTextWriter @this)
+        public static void OpenMultiLineComment(this IndentedTextWriter @this)
         {
             @this.WriteLine("/*");
         }
 
-        public static void EndMultiLineComment(this IndentedTextWriter @this)
+        public static void CloseMultiLineComment(this IndentedTextWriter @this)
         {
             @this.WriteLine("*/");
+        }
+
+        public static Scope StartScope(this IndentedTextWriter @this, string openingLine = null)
+        {
+            return Scope.Start(@this, openingLine);
+        }
+
+        public static MultiLineComment StartMultiLineComment(this IndentedTextWriter @this, string openingLine = null)
+        {
+            return MultiLineComment.Start(@this);
         }
     }
 }

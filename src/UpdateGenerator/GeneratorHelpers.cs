@@ -2,12 +2,35 @@
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using System;
 using System.CodeDom.Compiler;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 
 namespace UpdateGenerator
 {
     public static class GeneratorHelpers
     {
+        static readonly ConcurrentDictionary<Type, bool> IsSimpleTypeCache = new ConcurrentDictionary<Type, bool>();
+        public static bool IsSimpleType(Type type)
+        {
+            return IsSimpleTypeCache.GetOrAdd(type, t =>
+                type.IsPrimitive ||
+                type.IsEnum ||
+                type == typeof(string) ||
+                type == typeof(decimal) ||
+                type == typeof(DateTime) ||
+                type == typeof(DateTimeOffset) ||
+                type == typeof(TimeSpan) ||
+                type == typeof(Guid) ||
+                IsNullableSimpleType(type));
+
+            static bool IsNullableSimpleType(Type t)
+            {
+                var underlyingType = Nullable.GetUnderlyingType(t);
+                return underlyingType != null && IsSimpleType(underlyingType);
+            }
+        }
+
+
         public static IReadOnlyList<INamedTypeSymbol> GetAllTypes(IAssemblySymbol symbol)
         {
             var result = new List<INamedTypeSymbol>();
@@ -67,11 +90,16 @@ namespace UpdateGenerator
         }
     }
 
-    public struct ScopeWriter : IDisposable
+    public class Scope : IDisposable
     {
         public readonly IndentedTextWriter indentedTextWriter;
 
-        public ScopeWriter(IndentedTextWriter indentedTextWriter, string openingLine = null)
+        public static Scope Start(IndentedTextWriter indentedTextWriter, string openingLine = null)
+        {
+            return new Scope(indentedTextWriter, openingLine);
+        }
+
+        private Scope(IndentedTextWriter indentedTextWriter, string openingLine = null)
         {
             this.indentedTextWriter = indentedTextWriter 
                 ?? throw new ArgumentNullException(nameof(indentedTextWriter));
@@ -92,11 +120,16 @@ namespace UpdateGenerator
         }
     }
 
-    public struct CommentWriter : IDisposable
+    public class MultiLineComment : IDisposable
     {
         public readonly IndentedTextWriter indentedTextWriter;
 
-        public CommentWriter(IndentedTextWriter indentedTextWriter)
+        public static MultiLineComment Start(IndentedTextWriter indentedTextWriter)
+        {
+            return new MultiLineComment(indentedTextWriter);
+        }
+
+        private MultiLineComment(IndentedTextWriter indentedTextWriter)
         {
             this.indentedTextWriter = indentedTextWriter
                 ?? throw new ArgumentNullException(nameof(indentedTextWriter));

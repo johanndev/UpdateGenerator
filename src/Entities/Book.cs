@@ -5,5 +5,6 @@ namespace Entities
     public partial class Book : Entity<Book>
     {
         public string Title { get; set; }
+        public Author Author { get; set; }
     }
 }

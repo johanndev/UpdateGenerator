@@ -6,12 +6,12 @@ namespace Entities
     {
         public override void Update(Author other)
         {
-            // FirstName
+            // string
             if (this.FirstName != other.FirstName)
             {
                 this.FirstName = other.FirstName;
             }
-            // LastName
+            // string
             if (this.LastName != other.LastName)
             {
                 this.LastName = other.LastName;
@@ -22,10 +22,15 @@ namespace Entities
     {
         public override void Update(Book other)
         {
-            // Title
+            // string
             if (this.Title != other.Title)
             {
                 this.Title = other.Title;
+            }
+            // Author
+            if (this.Author != other.Author)
+            {
+                this.Author = other.Author;
             }
         }
     }

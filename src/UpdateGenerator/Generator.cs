@@ -3,11 +3,9 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Text;
 using System.CodeDom.Compiler;
-using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Runtime.CompilerServices;
 using System.Text;
 
 namespace UpdateGenerator
@@ -47,6 +45,7 @@ namespace UpdateGenerator
                 {
                     var semanticModel = compilation.GetSemanticModel(cls.SyntaxTree);
                     var classSymbol = semanticModel.GetDeclaredSymbol(cls);
+                    itw.WriteLine($"// {classSymbol}");
                     return classSymbol.IsDerivedFrom(baseType);
                 })
                 .OrderBy(cls => cls, clsComparer)
@@ -55,21 +54,19 @@ namespace UpdateGenerator
             itw.WriteLine("using System;");
             itw.WriteLine();
 
-            using (new ScopeWriter(itw, "namespace Entities"))
+            using (itw.StartScope("namespace Entities"))
             {
                 foreach (var cls in entityClasses)
                 {
-                    using (new ScopeWriter(itw, $"partial class {cls.Identifier.ValueText}"))
+                    using (itw.StartScope($"partial class {cls.Identifier.ValueText}"))
                     {
-                        using (new ScopeWriter(itw, $"public override void Update({cls.Identifier.ValueText} other)"))
+                        using (itw.StartScope($"public override void Update({cls.Identifier.ValueText} other)"))
                         {
                             foreach (var member in cls.Members)
                             {
-                                
-                                //itw.WriteLine($"// {member.GetType()}");
                                 var property = member as PropertyDeclarationSyntax;
-                                itw.WriteLine($"// {property.Identifier}");
-                                using (new ScopeWriter(itw, $"if (this.{property.Identifier} != other.{property.Identifier})"))
+                                itw.WriteLine($"// {property.Type.ToFullString()}");
+                                using (itw.StartScope($"if (this.{property.Identifier} != other.{property.Identifier})"))
                                 {
                                     itw.WriteLine($"this.{property.Identifier} = other.{property.Identifier};");
                                 }
