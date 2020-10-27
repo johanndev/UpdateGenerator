@@ -26,6 +26,8 @@ namespace Entities
 
             Console.WriteLine($"Book 1 title after update: {b1.Title}");
 
+            Console.WriteLine(Type.GetType("Entities.Book").AssemblyQualifiedName);
+
         }
     }
 }
