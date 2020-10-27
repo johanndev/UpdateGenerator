@@ -1,0 +1,33 @@
+using System;
+
+namespace Entities
+{
+    partial class Author
+    {
+        public override void Update(Author other)
+        {
+            // FirstName
+            if (this.FirstName != other.FirstName)
+            {
+                this.FirstName = other.FirstName;
+            }
+            // LastName
+            if (this.LastName != other.LastName)
+            {
+                this.LastName = other.LastName;
+            }
+        }
+    }
+    partial class Book
+    {
+        public override void Update(Book other)
+        {
+            // Title
+            if (this.Title != other.Title)
+            {
+                this.Title = other.Title;
+            }
+        }
+    }
+}
+
