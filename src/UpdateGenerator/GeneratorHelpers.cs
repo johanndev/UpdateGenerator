@@ -30,6 +30,13 @@ namespace UpdateGenerator
             }
         }
 
+        static readonly ConcurrentDictionary<ITypeSymbol, bool> IsSimpleTypeSymbolCache = new ConcurrentDictionary<ITypeSymbol, bool>();
+        public static bool IsSimpleType(ITypeSymbol typeSymbol)
+        {
+            return IsSimpleTypeSymbolCache.GetOrAdd(typeSymbol, t =>
+                t.IsValueType
+            );
+        }
 
         public static IReadOnlyList<INamedTypeSymbol> GetAllTypes(IAssemblySymbol symbol)
         {
@@ -56,7 +63,6 @@ namespace UpdateGenerator
 
         public static bool IsDerivedFrom(this ITypeSymbol type, INamedTypeSymbol baseType)
         {
-            var orgType = type.Name;
             while (type != null)
             {
                 if (SymbolEqualityComparer.Default.Equals(type, baseType))

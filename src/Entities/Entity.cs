@@ -3,6 +3,6 @@
     public abstract class Entity { }
     public abstract class Entity<TEntity> : Entity
     {
-        public abstract void Update(TEntity other);
+        public abstract TEntity Update(TEntity other);
     }
 }

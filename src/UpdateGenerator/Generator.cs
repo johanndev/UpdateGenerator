@@ -1,15 +1,14 @@
-﻿using Microsoft.CodeAnalysis;
+﻿//#define LAUNCH_DEBUGGER
+
+using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Text;
-using System;
 using System.CodeDom.Compiler;
-using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Runtime.CompilerServices;
 using System.Text;
 
 namespace UpdateGenerator
@@ -17,16 +16,21 @@ namespace UpdateGenerator
     [Generator]
     public class UpdateGenerator : ISourceGenerator
     {
-        static readonly IComparer<ClassDeclarationSyntax> clsComparer = Comparer<ClassDeclarationSyntax>.Create((x, y) =>
+        static readonly IComparer<ClassDeclarationSyntax> classDeclarationSyntaxComparer = Comparer<ClassDeclarationSyntax>.Create((x, y) =>
         {
             return x.Identifier.ToString().CompareTo(y.Identifier.ToString());
         });
 
         public void Initialize(GeneratorInitializationContext context)
         {
+#if LAUNCH_DEBUGGER
+            if (!Debugger.IsAttached)
+            {
+                Debugger.Launch();
+            }
+#endif 
             // Register a syntax receiver that will be created for each generation pass
             context.RegisterForSyntaxNotifications(() => new SyntaxReceiver());
-            //Debugger.Launch();
         }
 
         public void Execute(GeneratorExecutionContext context)
@@ -38,6 +42,7 @@ namespace UpdateGenerator
             }
 
             var compilation = (CSharpCompilation)context.Compilation;
+            // TODO: Get baseType programmatically
             var baseType = compilation.GetTypeByMetadataName("Entities.Entity");
 
             SourceText sourceText;
@@ -45,77 +50,79 @@ namespace UpdateGenerator
             using var stringWriter = new StringWriter();
             using var itw = new IndentedTextWriter(stringWriter, "    ");
 
-            //var entityClasses = receiver.CandidateClasses
-            //    .Where(cls =>
-            //    {
-            //        var semanticModel = compilation.GetSemanticModel(cls.SyntaxTree);
-            //        var classSymbol = semanticModel.GetDeclaredSymbol(cls);
-            //        itw.WriteLine($"// {classSymbol}");
-            //        return classSymbol.IsDerivedFrom(baseType);
-            //    })
-            //    .OrderBy(cls => cls, clsComparer)
-            //    .ToList();
-
-            var complex = receiver.CandidateClasses
-                .Select(candidateClass =>
+            var candidateClasses = receiver.CandidateClasses
+                .Where(classDeclarationSyntax =>
                 {
-                    var semanticModel = compilation.GetSemanticModel(candidateClass.SyntaxTree);
-                    var classSymbol = semanticModel.GetDeclaredSymbol(candidateClass);
-                    var isDerived = classSymbol.IsDerivedFrom(baseType);
-
-                    return isDerived
-                        ? new { candidateClass, semanticModel, classSymbol, isDerived }
-                        : null;
+                    var semanticClassModel = compilation.GetSemanticModel(classDeclarationSyntax.SyntaxTree);
+                    var classSymbol = semanticClassModel.GetDeclaredSymbol(classDeclarationSyntax);
+                    return classSymbol.IsDerivedFrom(baseType);
                 })
-                .Where(complexCls => complexCls != null)
-                .OrderBy(complexCls => complexCls.candidateClass, clsComparer)
+                .OrderBy(classDeclarationSyntax => classDeclarationSyntax, classDeclarationSyntaxComparer)
                 .ToList();
 
             itw.WriteLine("using System;");
             itw.WriteLine();
 
+            // TODO: Get Namespace from compilation
             using (itw.StartScope("namespace Entities"))
             {
-                foreach (var cls in complex)
+                foreach (var candidateClass in candidateClasses)
                 {
-                    using (itw.StartScope($"partial class {cls.candidateClass.Identifier.ValueText}"))
+                    using (itw.StartScope($"partial class {candidateClass.Identifier.ValueText}"))
                     {
-                        using (itw.StartScope($"public override void Update({cls.candidateClass.Identifier.ValueText} other)"))
+                        using (itw.StartScope($"public override {candidateClass.Identifier.ValueText} Update({candidateClass.Identifier.ValueText} other)"))
                         {
-                            //var classes = string.Join(", ", complex.Select(e => e.candidateClass.Identifier));
-                            //using (MultiLineComment.Start(itw))
-                            //{
-                            //    itw.WriteLine($"{classes}");
-                            //}
-                            //itw.WriteLine($"// {cls.classSymbol}");
-
-                            foreach (var member in cls.candidateClass.Members)
+                            using (itw.StartScope($"if (other is null)"))
                             {
-                                var property = member as PropertyDeclarationSyntax;
-                                var propModel = compilation.GetSemanticModel(member.SyntaxTree);
-                                var propDeclared = propModel.GetDeclaredSymbol(member) as IPropertySymbol;
+                                itw.WriteLine("return this;");
+                            }
 
-                                var isEntity = GeneratorHelpers.IsDerivedFrom(propDeclared.Type, baseType);
+                            foreach (var classMemberDeclarationSyntax in candidateClass.Members)
+                            {
+                                var propertyDeclarationSyntax = classMemberDeclarationSyntax as PropertyDeclarationSyntax;
 
-                                if (isEntity)
+                                var propertySemanticModel = compilation.GetSemanticModel(classMemberDeclarationSyntax.SyntaxTree);
+                                var propertySymbol = propertySemanticModel.GetDeclaredSymbol(propertyDeclarationSyntax);
+
+                                if (propertySymbol.IsReadOnly)
                                 {
-                                    itw.WriteLine($"this.{property.Identifier}.Update({property.Identifier} other);");
-
+                                    continue;
                                 }
+
+                                ITypeSymbol propertyTypeSymbol = propertySymbol.Type;
+                                var isDerivedFromEntity = propertyTypeSymbol.IsDerivedFrom(baseType);
+
+                                //var isSimpleType = GeneratorHelpers.IsSimpleType(typeSymbol);
+
+                                if (isDerivedFromEntity)
+                                {
+                                    // The member is another type derived from entity, so we can call the update method on it.
+                                    itw.WriteTernaryAssignment(
+                                        $"this.{propertyDeclarationSyntax.Identifier}",
+                                        $"this.{propertyDeclarationSyntax.Identifier} is null",
+                                        $"other.{propertyDeclarationSyntax.Identifier}",
+                                        $"this.{propertyDeclarationSyntax.Identifier}.Update(other.{propertyDeclarationSyntax.Identifier})");
+                                }
+                                //else if (!isSimpleType)
+                                //{
+                                //    // The member is complex type not derived from entity, so we try to set its properties
+                                //    var typeSymbolName = compilation.GetTypeByMetadataName(typeSymbol.ToString());
+                                //    var members = typeSymbolName.GetMembers().OfType<IPropertySymbol>();
+                                //}
                                 else
                                 {
-                                    using (itw.StartScope($"if (this.{property.Identifier} != other.{property.Identifier})"))
+                                    // The type is a simple type - we test for equality and overwrite, if necessary
+                                    using (itw.StartScope($"if (this.{propertyDeclarationSyntax.Identifier} != other.{propertyDeclarationSyntax.Identifier})"))
                                     {
-                                        itw.WriteLine($"this.{property.Identifier} = other.{property.Identifier};");
+                                        itw.WriteLine($"this.{propertyDeclarationSyntax.Identifier} = other.{propertyDeclarationSyntax.Identifier};");
                                     }
                                 }
-
                             }
+
+                            itw.WriteLine("return this;");
                         }
                     }
                 }
-                //var outputDirTemp = @"C:foo code UpdateGenerator src Entities";
-                //itw.WriteLine($"// outputDir: {outputDirTemp}");
             }
 
             itw.Flush();
@@ -125,40 +132,6 @@ namespace UpdateGenerator
 
             // Adds the generated source code to the compilation
             context.AddSource("Generated.cs", sourceText);
-
-            var fileName = "Generated.txt";
-            var entityPath = baseType.DeclaringSyntaxReferences.First().SyntaxTree.FilePath;
-            var outputDirectory = Path.GetDirectoryName(entityPath);
-            var filePath = Path.Combine(outputDirectory, fileName);
-            try
-            {
-                if (File.Exists(filePath))
-                {
-                    var fileText = File.ReadAllText(filePath);
-                    var sourceFileText = SourceText.From(fileText, Encoding.UTF8);
-                    if (sourceText.ContentEquals(sourceFileText))
-                        return;
-                }
-
-                // For debugging purposes, we write the generated code into a text file.
-                using var writer = new StreamWriter(fileName);
-                sourceText.Write(writer);
-            }
-            catch (Exception ex)
-            {
-                itw.Flush();
-                stringWriter.Flush();
-                itw.WriteLine(ex.Message);
-                itw.WriteLine(ex.StackTrace);
-
-                var errorSourceText = SourceText.From(stringWriter.ToString(), Encoding.UTF8);
-                var errorFilePath = Path.Combine(outputDirectory, "error.txt");
-
-                using var writer = new StreamWriter(errorFilePath);
-                errorSourceText.Write(writer);
-
-                throw;
-            }
         }
     }
 }
